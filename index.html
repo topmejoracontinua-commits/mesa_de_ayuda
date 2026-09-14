@@ -70,7 +70,42 @@
     resize: vertical;
     min-height: 90px;
   }
-  button {
+  input[type="file"] {
+    padding: 8px;
+    cursor: pointer;
+  }
+  .file-hint {
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: 4px;
+  }
+  .preview-wrap {
+    margin-top: 10px;
+    display: none;
+  }
+  .preview-wrap.show { display: block; }
+  .preview-wrap img {
+    max-width: 100%;
+    max-height: 160px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    display: block;
+  }
+  .remove-img {
+    margin-top: 8px;
+    background: transparent;
+    border: 1px solid var(--danger);
+    color: var(--danger);
+    font-size: 12px;
+    padding: 6px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    width: auto;
+  }
+  .remove-img:hover {
+    background: rgba(239,68,68,0.1);
+  }
+  button[type="submit"] {
     width: 100%;
     margin-top: 24px;
     padding: 12px;
@@ -82,8 +117,8 @@
     font-weight: 600;
     cursor: pointer;
   }
-  button:hover { background: var(--accent-hover); }
-  button:disabled {
+  button[type="submit"]:hover { background: var(--accent-hover); }
+  button[type="submit"]:disabled {
     opacity: 0.6;
     cursor: not-allowed;
   }
@@ -136,6 +171,14 @@
       <option value="3">Urgente</option>
     </select>
 
+    <label>Imagen / captura de pantalla (opcional)</label>
+    <input type="file" id="imagen" accept="image/*">
+    <div class="file-hint">JPG o PNG, máx. 5 MB.</div>
+    <div class="preview-wrap" id="previewWrap">
+      <img id="previewImg" alt="Vista previa">
+      <button type="button" class="remove-img" id="removeImg">Quitar imagen</button>
+    </div>
+
     <button type="submit" id="submitBtn">Enviar ticket</button>
 
     <div class="status" id="status"></div>
@@ -144,17 +187,62 @@
 
 <script>
   // ==== CONFIGURACIÓN ====
-  const WEBHOOK_URL = "https://envy-recollect-last.ngrok-free.dev/webhook/mesa-interna"; // reemplazar con la URL real del webhook
+  const WEBHOOK_URL = "https://envy-recollect-last.ngrok-free.dev/webhook/mesa-interna"; // URL de producción
+  const MAX_FILE_MB = 5;
   // ========================
 
   const form = document.getElementById('ticketForm');
   const statusDiv = document.getElementById('status');
   const submitBtn = document.getElementById('submitBtn');
+  const imagenInput = document.getElementById('imagen');
+  const previewWrap = document.getElementById('previewWrap');
+  const previewImg = document.getElementById('previewImg');
+  const removeImgBtn = document.getElementById('removeImg');
+
+  let imagenBase64 = null;
+  let imagenNombre = null;
+  let imagenTipo = null;
 
   function showStatus(message, isError) {
     statusDiv.textContent = message;
     statusDiv.className = 'status show ' + (isError ? 'err' : 'ok');
   }
+
+  imagenInput.addEventListener('change', () => {
+    const file = imagenInput.files[0];
+    if (!file) return;
+
+    if (file.size > MAX_FILE_MB * 1024 * 1024) {
+      showStatus('La imagen supera los ' + MAX_FILE_MB + ' MB. Elegí una más liviana.', true);
+      imagenInput.value = '';
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      // reader.result viene como "data:image/png;base64,AAAA..."
+      const fullResult = reader.result;
+      imagenBase64 = fullResult.split(',')[1]; // solo la parte base64, sin el prefijo
+      imagenNombre = file.name;
+      imagenTipo = file.type;
+
+      previewImg.src = fullResult;
+      previewWrap.classList.add('show');
+    };
+    reader.onerror = () => {
+      showStatus('No se pudo leer la imagen. Probá con otro archivo.', true);
+    };
+    reader.readAsDataURL(file);
+  });
+
+  removeImgBtn.addEventListener('click', () => {
+    imagenBase64 = null;
+    imagenNombre = null;
+    imagenTipo = null;
+    imagenInput.value = '';
+    previewWrap.classList.remove('show');
+    previewImg.src = '';
+  });
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -164,7 +252,10 @@
       descripcion: document.getElementById('descripcion').value.trim(),
       nombre: document.getElementById('nombre').value.trim(),
       sucursal: document.getElementById('sucursal').value.trim(),
-      prioridad: document.getElementById('prioridad').value
+      prioridad: document.getElementById('prioridad').value,
+      imagen_base64: imagenBase64,   // null si no cargó imagen
+      imagen_nombre: imagenNombre,
+      imagen_tipo: imagenTipo
     };
 
     submitBtn.disabled = true;
@@ -184,6 +275,11 @@
 
       showStatus('✅ Ticket enviado correctamente. Gracias.', false);
       form.reset();
+      imagenBase64 = null;
+      imagenNombre = null;
+      imagenTipo = null;
+      previewWrap.classList.remove('show');
+      previewImg.src = '';
 
     } catch (err) {
       showStatus('❌ Error al enviar el ticket: ' + err.message, true);
